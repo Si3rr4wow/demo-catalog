@@ -1,11 +1,78 @@
-import Head from 'next/head'
-import Image from 'next/image'
-import { Inter } from 'next/font/google'
-import styles from '@/styles/Home.module.css'
-
-const inter = Inter({ subsets: ['latin'] })
+import FileUpload from '@/components/file-upload';
+import { Box, Center, HStack, Heading, Image, Spinner } from '@chakra-ui/react';
+import Head from 'next/head';
+import { useEffect, useState } from 'react';
 
 export default function Home() {
+  const [filePath, setFilePath] = useState<string>('');
+  const [file, setFile] = useState<Blob | null>(null);
+  const [fileSrc, setFileSrc] = useState<string | undefined>();
+  const [fileBin, setFileBin] = useState<string | undefined>();
+  const [predictions, setPredictions] = useState<
+    { confidences: number[]; displayNames: string[] }[]
+  >([]);
+  const [predictionsLoading, setPredictionsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!file) return;
+    const dataUrlReader = new FileReader();
+    dataUrlReader.readAsDataURL(file);
+    dataUrlReader.onloadend = () => {
+      if (!dataUrlReader.result) throw new Error('something went wrong');
+      setFileSrc(dataUrlReader.result as string);
+    };
+
+    const binReader = new FileReader();
+    binReader.readAsBinaryString(file);
+    binReader.onloadend = () => {
+      if (!binReader.result) throw new Error('something went wrong');
+      setFileBin(binReader.result as string);
+    };
+  }, [file]);
+
+  useEffect(() => {
+    if (!fileBin) return;
+    if (!process.env.NEXT_PUBLIC_GCLOUD_API_URL)
+      throw new Error('Missing NEXT_PUBLIC_GCLOUD_API_URL');
+    setPredictions([]);
+    setPredictionsLoading(true);
+    fetch(process.env.NEXT_PUBLIC_GCLOUD_API_URL, {
+      body: JSON.stringify({
+        instances: [
+          {
+            content: btoa(fileBin),
+          },
+        ],
+        parameters: {
+          confidenceThreshold: 0.2,
+          maxPredictions: 5,
+        },
+      }),
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.NEXT_PUBLIC_GCLOUD_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    })
+      .then(
+        (res) => res.json(),
+        (err) => console.log(err)
+      )
+      .then(
+        (res) => {
+          res.predictions && setPredictions(res.predictions);
+        },
+        (err) => console.log(err)
+      )
+      .finally(() => {
+        setPredictionsLoading(false);
+      });
+  }, [fileBin]);
+
+  const onSelectImage = (event: any) => {
+    setFile(event.target.files[0]);
+    setFilePath(event.target.value);
+  };
   return (
     <>
       <Head>
@@ -14,101 +81,44 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <main className={`${styles.main} ${inter.className}`}>
-        <div className={styles.description}>
-          <p>
-            Get started by editing&nbsp;
-            <code className={styles.code}>pages/index.tsx</code>
-          </p>
-          <div>
-            <a
-              href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              By{' '}
-              <Image
-                src="/vercel.svg"
-                alt="Vercel Logo"
-                className={styles.vercelLogo}
-                width={100}
-                height={24}
-                priority
-              />
-            </a>
-          </div>
-        </div>
-
-        <div className={styles.center}>
-          <Image
-            className={styles.logo}
-            src="/next.svg"
-            alt="Next.js Logo"
-            width={180}
-            height={37}
-            priority
-          />
-        </div>
-
-        <div className={styles.grid}>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>
-              Docs <span>-&gt;</span>
-            </h2>
-            <p>
-              Find in-depth information about Next.js features and&nbsp;API.
-            </p>
-          </a>
-
-          <a
-            href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>
-              Learn <span>-&gt;</span>
-            </h2>
-            <p>
-              Learn about Next.js in an interactive course with&nbsp;quizzes!
-            </p>
-          </a>
-
-          <a
-            href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>
-              Templates <span>-&gt;</span>
-            </h2>
-            <p>
-              Discover and deploy boilerplate example Next.js&nbsp;projects.
-            </p>
-          </a>
-
-          <a
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>
-              Deploy <span>-&gt;</span>
-            </h2>
-            <p>
-              Instantly deploy your Next.js site to a shareable URL
-              with&nbsp;Vercel.
-            </p>
-          </a>
-        </div>
+      <main>
+        <Heading>Add a new product</Heading>
+        <FileUpload
+          name="product-image"
+          placeholder="Product image"
+          label={'Upload an image'}
+          value={filePath}
+          onChange={onSelectImage}
+        ></FileUpload>
+        <Center>
+          {fileSrc ? (
+            <Image
+              borderRadius={4}
+              my={4}
+              src={fileSrc as unknown as string}
+              alt={'Your image'}
+              maxH={400}
+            ></Image>
+          ) : null}
+        </Center>
+        {predictionsLoading && <Spinner />}
+        {!!predictions.length && (
+          <>
+            <Heading size={'md'} my={4}>
+              Possible Categories
+            </Heading>
+            <HStack spacing="24px">
+              {predictions.map(({ displayNames }) =>
+                displayNames.map((displayName) => (
+                  <Box p={4} background={'blackAlpha.400'} key={displayName}>
+                    {displayName.toLocaleUpperCase('en-GB')}
+                  </Box>
+                ))
+              )}
+            </HStack>
+          </>
+        )}
       </main>
     </>
-  )
+  );
 }
